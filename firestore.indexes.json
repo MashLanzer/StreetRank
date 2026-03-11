@@ -17,13 +17,6 @@
         { "fieldPath": "toUid",   "order": "ASCENDING" },
         { "fieldPath": "status",  "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "score", "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []
