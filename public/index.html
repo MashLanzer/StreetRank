@@ -13,6 +13,9 @@
   <meta name="description" content="StreetRank – La red social de ranking de peleas callejeras. Desafía peleadores cercanos, sube tu score ELO y demuestra quién manda en tu ciudad." />
   <title>StreetRank – El Ring de la Calle</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#c0392b" />
+  <link rel="apple-touch-icon" href="https://api.dicebear.com/7.x/identicon/svg?seed=StreetRank&backgroundColor=c0392b" />
 </head>
 <body>
 
@@ -171,6 +174,15 @@
 
   const loader = document.getElementById('loader');
   const toastContainer = document.getElementById('toastContainer');
+
+  // Registrar Service Worker para PWA
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('SW registrado ✨'))
+        .catch(err => console.warn('SW no registrado ⚠️', err));
+    });
+  }
 
   // ─── Verificar estado de auth al cargar ───────────────────────────────────
   onAuthStateChanged(auth, async (user) => {
