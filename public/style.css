@@ -1355,6 +1355,48 @@ textarea.form-control {
   to { opacity: 0; transform: translateX(100%); }
 }
 
+/* ─── PWA & Extras ────────────────────────────────────────────────────────── */
+.animate-in {
+  animation: slideUp 0.4s ease forwards;
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-glow {
+  animation: glowPurple 3s infinite alternate;
+}
+@keyframes glowPurple {
+  from { box-shadow: 0 0 5px rgba(243, 156, 18, 0.2); }
+  to { box-shadow: 0 0 20px rgba(243, 156, 18, 0.4); }
+}
+
+.score-badge {
+  background: var(--bg-secondary);
+  color: var(--gold);
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  border: 1px solid rgba(243, 156, 18, 0.3);
+}
+
+.level-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.level-rookie { background: #555; color: white; }
+.level-fighter { background: #2980b9; color: white; }
+.level-brawler { background: #8e44ad; color: white; }
+.level-champion { background: #c0392b; color: white; }
+.level-legend { background: linear-gradient(90deg, #f1c40f, #e67e22); color: black; }
+
 /* ─── Empty States ─────────────────────────────────────────────────────────── */
 .empty-state {
   text-align: center;

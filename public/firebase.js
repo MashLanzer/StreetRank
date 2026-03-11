@@ -30,7 +30,6 @@ const firebaseConfig = {
   messagingSenderId: "740449956199",
   appId:             "1:740449956199:web:680cbe91df6ae4294f3fc2",
   measurementId:     "G-W7THD6ZQ1Q"
-  // storageBucket eliminado: no usamos Firebase Storage
 };
 
 // ─── Clave de la API de ImgBB ─────────────────────────────────────────────────
