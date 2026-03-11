@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<!--
+  profile-setup.html
+  Configuración inicial del perfil del peleador (3 pasos):
+  - Paso 1: Datos básicos (nombre, apodo, país, ciudad, edad, peso, altura, mano, descripción)
+  - Paso 2: Foto de perfil → se sube a ImgBB (NO usa Firebase Storage, 0 cuota consumida)
+  - Paso 3: Confirmación y guardado de metadatos en Firestore (colección "users")
+-->
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Crea tu perfil de peleador en StreetRank." />
+  <title>StreetRank – Crear Perfil</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ─── Loader ─── -->
+<div id="loader" class="loader-overlay">
+  <div class="spinner"></div>
+  <p class="loader-text">Cargando...</p>
+</div>
+
+<!-- ─── Toasts ─── -->
+<div id="toastContainer" class="toast-container"></div>
+
+<!-- ─── Setup Page ─── -->
+<div class="setup-page" id="setupPage" style="display:none;">
+
+  <div class="setup-container">
+
+    <!-- Header -->
+    <div class="setup-header">
+      <h1><span>Street</span>Rank</h1>
+      <p>⚔️ Crea tu perfil de peleador</p>
+    </div>
+
+    <!-- Progress -->
+    <div class="step-progress" id="stepProgress">
+      <!-- Paso 1 -->
+      <div class="step-wrapper">
+        <div class="step-circle active" id="circle1">1</div>
+        <div class="step-label active" id="label1">Datos</div>
+      </div>
+      <div class="step-line" id="line1"></div>
+      <!-- Paso 2 -->
+      <div class="step-wrapper">
+        <div class="step-circle" id="circle2">2</div>
+        <div class="step-label" id="label2">Foto</div>
+      </div>
+      <div class="step-line" id="line2"></div>
+      <!-- Paso 3 -->
+      <div class="step-wrapper">
+        <div class="step-circle" id="circle3">3</div>
+        <div class="step-label" id="label3">Listo</div>
+      </div>
+    </div>
+
+    <!-- ─── Paso 1: Datos básicos ─── -->
+    <div class="step-content card active" id="step1">
+      <div class="card-header">
+        <span class="card-title">🥊 Paso 1: Tus datos de combate</span>
+      </div>
+
+      <form id="formStep1" onsubmit="nextStep(event, 2)">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="nombreCompleto">Nombre completo *</label>
+            <input type="text" id="nombreCompleto" class="form-control" placeholder="Ej: Carlos García" required maxlength="60" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="apodo">Apodo de peleador *</label>
+            <input type="text" id="apodo" class="form-control" placeholder="Ej: El Toro" required maxlength="30" />
+            <p class="form-hint">Así te verán los demás</p>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="pais">País *</label>
+            <select id="pais" class="form-control" required>
+              <option value="">Selecciona tu país...</option>
+              <option>Argentina</option>
+              <option>Bolivia</option>
+              <option>Brasil</option>
+              <option>Chile</option>
+              <option>Colombia</option>
+              <option>Costa Rica</option>
+              <option>Cuba</option>
+              <option>Ecuador</option>
+              <option>El Salvador</option>
+              <option>España</option>
+              <option>Guatemala</option>
+              <option>Honduras</option>
+              <option>México</option>
+              <option>Nicaragua</option>
+              <option>Panamá</option>
+              <option>Paraguay</option>
+              <option>Perú</option>
+              <option>Puerto Rico</option>
+              <option>República Dominicana</option>
+              <option>Uruguay</option>
+              <option>Venezuela</option>
+              <option>Estados Unidos</option>
+              <option>Otro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ciudad">Ciudad *</label>
+            <input type="text" id="ciudad" class="form-control" placeholder="Ej: Buenos Aires" required maxlength="60" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="edad">Edad *</label>
+            <input type="number" id="edad" class="form-control" placeholder="18" required min="16" max="70" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="peso">Peso (kg) *</label>
+            <input type="number" id="peso" class="form-control" placeholder="75" required min="40" max="200" step="0.1" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="altura">Altura (cm) *</label>
+            <input type="number" id="altura" class="form-control" placeholder="175" required min="140" max="230" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="manoHabil">Mano hábil *</label>
+            <select id="manoHabil" class="form-control" required>
+              <option value="">Selecciona...</option>
+              <option value="derecha">Derecha (Orthodox)</option>
+              <option value="zurda">Zurda (Southpaw)</option>
+              <option value="ambidiestra">Ambidiestra (Switch)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="descripcion">Tu historia / descripción</label>
+          <textarea id="descripcion" class="form-control" placeholder="Cuéntanos quién eres, de dónde vienes, cómo empezaste... (opcional)" maxlength="500" rows="4"></textarea>
+          <p class="form-hint" id="descCount">0 / 500 caracteres</p>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;">
+          <button type="submit" class="btn btn-primary btn-lg">
+            Siguiente →
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ─── Paso 2: Foto de perfil ─── -->
+    <div class="step-content card" id="step2" style="display:none;">
+      <div class="card-header">
+        <span class="card-title">📸 Paso 2: Tu foto de combate</span>
+      </div>
+
+      <p style="color:var(--text-secondary);margin-bottom:1.5rem;font-size:0.95rem;">
+        Sube una foto tuya. Esta será tu cara visible en el ranking. Si no subes foto ahora, podrás hacerlo más tarde desde tu perfil.
+      </p>
+
+      <!-- Área de upload -->
+      <div class="photo-upload-area" id="photoUploadArea" onclick="document.getElementById('photoInput').click()">
+        <div id="photoPlaceholder">
+          <div class="photo-upload-icon">🥋</div>
+          <p class="photo-upload-text"><strong>Haz clic para seleccionar tu foto</strong></p>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">JPG, PNG, WEBP · Máximo 5 MB · Alojada en ImgBB</p>
+        </div>
+        <img id="photoPreview" class="photo-upload-preview" alt="Vista previa" />
+      </div>
+      <input type="file" id="photoInput" accept="image/jpeg,image/png,image/webp" />
+
+      <p id="photoError" class="form-error hidden mt-1"></p>
+
+      <!-- Progreso de subida -->
+      <div id="uploadProgress" class="hidden mt-2">
+        <div style="background:var(--border-color);border-radius:99px;height:6px;overflow:hidden;">
+          <div id="progressBar" style="height:100%;background:var(--red-primary);width:0%;transition:width 0.3s;border-radius:99px;"></div>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-muted);text-align:center;margin-top:0.5rem;" id="uploadText">Subiendo...</p>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;margin-top:1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="goToStep(1)">
+          ← Volver
+        </button>
+        <div style="display:flex;gap:0.75rem;">
+          <button type="button" class="btn btn-secondary" onclick="skipPhoto()">
+            Omitir foto
+          </button>
+          <button type="button" class="btn btn-primary btn-lg" id="btnUploadAndNext" onclick="uploadPhotoAndNext()">
+            Subir y continuar →
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Paso 3: Confirmación ─── -->
+    <div class="step-content card" id="step3" style="display:none;">
+      <div class="card-header">
+        <span class="card-title">✅ Paso 3: Confirmar y guardar</span>
+      </div>
+
+      <div id="confirmationCard" style="text-align:center;padding:1rem 0;">
+        <!-- Se llena dinámicamente -->
+      </div>
+
+      <div style="display:flex;justify-content:space-between;margin-top:1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="goToStep(2)">
+          ← Volver
+        </button>
+        <button type="button" class="btn btn-success btn-lg" id="btnSaveProfile" onclick="saveProfile()">
+          ¡Al ring! 🥊
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ─── Scripts ─── -->
+<script type="module">
+  // Importamos auth, db y la función uploadToImgBB (NO importamos firebase/storage)
+  import { auth, db, uploadToImgBB } from './firebase.js';
+  import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+  import {
+    doc, setDoc, serverTimestamp
+  } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+  const loader = document.getElementById('loader');
+
+  // Datos acumulados del formulario
+  let currentUser = null;
+  let currentStep = 1;
+  let profileData = {};
+  let uploadedPhotoURL = null;
+
+  // ─── Auth check ──────────────────────────────────────────────────────────
+  onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      window.location.href = 'index.html';
+      return;
+    }
+    currentUser = user;
+    loader.classList.add('hidden');
+    document.getElementById('setupPage').style.display = 'block';
+    profileData.uid = user.uid;
+    profileData.email = user.email;
+  });
+
+  // ─── Contador de caracteres ───────────────────────────────────────────────
+  document.getElementById('descripcion').addEventListener('input', function() {
+    document.getElementById('descCount').textContent = `${this.value.length} / 500 caracteres`;
+  });
+
+  // ─── Preview de foto ──────────────────────────────────────────────────────
+  document.getElementById('photoInput').addEventListener('change', function() {
+    const file = this.files[0];
+    const errorEl = document.getElementById('photoError');
+    errorEl.classList.add('hidden');
+
+    if (!file) return;
+
+    // Validar tamaño (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      errorEl.textContent = 'La imagen es demasiado grande. Máximo 5 MB.';
+      errorEl.classList.remove('hidden');
+      this.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const preview = document.getElementById('photoPreview');
+      preview.src = e.target.result;
+      preview.style.display = 'block';
+      document.getElementById('photoPlaceholder').style.display = 'none';
+      document.getElementById('photoUploadArea').classList.add('has-image');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // ─── Navegación entre pasos ───────────────────────────────────────────────
+  window.nextStep = function(e, targetStep) {
+    if (e) e.preventDefault();
+
+    // Guardar datos paso 1
+    if (currentStep === 1) {
+      profileData.nombre = document.getElementById('nombreCompleto').value.trim();
+      profileData.apodo = document.getElementById('apodo').value.trim();
+      profileData.pais = document.getElementById('pais').value;
+      profileData.ciudad = document.getElementById('ciudad').value.trim();
+      profileData.edad = parseInt(document.getElementById('edad').value);
+      profileData.peso = parseFloat(document.getElementById('peso').value);
+      profileData.altura = parseInt(document.getElementById('altura').value);
+      profileData.manoHabil = document.getElementById('manoHabil').value;
+      profileData.descripcion = document.getElementById('descripcion').value.trim();
+    }
+
+    goToStep(targetStep);
+  };
+
+  window.goToStep = function(step) {
+    document.getElementById(`step${currentStep}`).style.display = 'none';
+    document.getElementById(`step${currentStep}`).classList.remove('active');
+
+    // Marcar completado
+    document.getElementById(`circle${currentStep}`).classList.remove('active');
+    document.getElementById(`circle${currentStep}`).classList.add('done');
+    document.getElementById(`circle${currentStep}`).innerHTML = '✓';
+    document.getElementById(`label${currentStep}`).classList.remove('active');
+    if (currentStep < step && document.getElementById(`line${currentStep}`)) {
+      document.getElementById(`line${currentStep}`).classList.add('done');
+    }
+
+    currentStep = step;
+
+    document.getElementById(`step${currentStep}`).style.display = 'block';
+    document.getElementById(`step${currentStep}`).classList.add('active');
+    document.getElementById(`circle${currentStep}`).classList.remove('done');
+    document.getElementById(`circle${currentStep}`).classList.add('active');
+    document.getElementById(`circle${currentStep}`).textContent = currentStep;
+    document.getElementById(`label${currentStep}`).classList.add('active');
+
+    if (step === 3) renderConfirmation();
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // ─── Subir foto a ImgBB (no usa Firebase Storage) ────────────────────────
+  window.uploadPhotoAndNext = async function() {
+    const file = document.getElementById('photoInput').files[0];
+    if (!file) {
+      showToast('warning', 'Sin foto', 'Selecciona una imagen primero, o usa "Omitir foto".');
+      return;
+    }
+
+    const btn       = document.getElementById('btnUploadAndNext');
+    const progressBar  = document.getElementById('progressBar');
+    const uploadText   = document.getElementById('uploadText');
+    const progressWrap = document.getElementById('uploadProgress');
+    const errorEl      = document.getElementById('photoError');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-sm"></span> Subiendo a ImgBB...';
+    progressWrap.classList.remove('hidden');
+    errorEl.classList.add('hidden');
+
+    try {
+      // uploadToImgBB está definida en firebase.js y usa la API de ImgBB
+      const { url, deleteUrl } = await uploadToImgBB(file, (pct) => {
+        progressBar.style.width = pct + '%';
+        uploadText.textContent  = `Subiendo... ${Math.round(pct)}%`;
+      });
+
+      uploadedPhotoURL   = url;
+      profileData.photoURL    = url;
+      profileData.photoDeleteUrl = deleteUrl; // guardamos para poder borrarla después
+
+      goToStep(3);
+    } catch (err) {
+      console.error('Error subiendo foto a ImgBB:', err);
+      errorEl.textContent = 'No se pudo subir la foto: ' + err.message +
+        ' · Verifica que IMGBB_API_KEY esté configurado en firebase.js';
+      errorEl.classList.remove('hidden');
+      showToast('error', 'Error de subida', err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Subir y continuar →';
+      progressWrap.classList.add('hidden');
+    }
+  };
+
+  window.skipPhoto = function() {
+    profileData.photoURL = null;
+    goToStep(3);
+  };
+
+  // ─── Renderizar confirmación ──────────────────────────────────────────────
+  function renderConfirmation() {
+    const photoSrc = profileData.photoURL || 'https://api.dicebear.com/7.x/adventurer-neutral/svg?seed=' + encodeURIComponent(profileData.apodo);
+
+    const manoLabels = { derecha: '👊 Orthodox', zurda: '🤜 Southpaw', ambidiestra: '⚡ Switch' };
+
+    document.getElementById('confirmationCard').innerHTML = `
+      <img src="${photoSrc}" alt="Tu foto" style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:4px solid var(--red-primary);margin:0 auto 1rem;display:block;box-shadow:var(--shadow-red);" />
+      <h2 style="font-family:var(--font-display);font-size:2rem;letter-spacing:2px;color:var(--red-secondary);">${escapeHtml(profileData.apodo)}</h2>
+      <p style="color:var(--text-secondary);margin-bottom:1.5rem;">${escapeHtml(profileData.nombre)}</p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;text-align:left;background:var(--bg-secondary);border-radius:var(--radius-md);padding:1rem;margin-bottom:1rem;">
+        <div><span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;">País</span><br/><strong>${escapeHtml(profileData.pais)}</strong></div>
+        <div><span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;">Ciudad</span><br/><strong>${escapeHtml(profileData.ciudad)}</strong></div>
+        <div><span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;">Edad</span><br/><strong>${profileData.edad} años</strong></div>
+        <div><span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;">Peso / Altura</span><br/><strong>${profileData.peso} kg / ${profileData.altura} cm</strong></div>
+        <div><span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;">Mano hábil</span><br/><strong>${manoLabels[profileData.manoHabil] || profileData.manoHabil}</strong></div>
+        <div><span style="color:var(--text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;">Score inicial</span><br/><strong style="color:var(--gold);">1000 pts</strong></div>
+      </div>
+
+      ${profileData.descripcion ? `<p style="font-size:0.9rem;color:var(--text-secondary);font-style:italic;padding:0 1rem;">"${escapeHtml(profileData.descripcion)}"</p>` : ''}
+    `;
+  }
+
+  // ─── Guardar perfil en Firestore ──────────────────────────────────────────
+  window.saveProfile = async function() {
+    const btn = document.getElementById('btnSaveProfile');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-sm"></span> Guardando...';
+
+    try {
+      const defaultPhoto = `https://api.dicebear.com/7.x/adventurer-neutral/svg?seed=${encodeURIComponent(profileData.apodo)}`;
+
+      const userDocData = {
+        uid: profileData.uid,
+        email: profileData.email,
+        nombre: profileData.nombre,
+        apodo: profileData.apodo,
+        pais: profileData.pais,
+        ciudad: profileData.ciudad,
+        edad: profileData.edad,
+        peso: profileData.peso,
+        altura: profileData.altura,
+        manoHabil: profileData.manoHabil,
+        descripcion: profileData.descripcion || '',
+        // Las fotos se alojan en ImgBB; Firestore solo guarda la URL pública
+        photoURL: profileData.photoURL || defaultPhoto,
+        photoDeleteUrl: profileData.photoDeleteUrl || null, // para poder borrarla de ImgBB
+        score: 1000,        // Score inicial ELO
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        fights: [],         // Array de peleas
+        location: null,     // Se actualiza con geolocalización
+        lastLocationUpdate: null,
+        profileComplete: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      // Guarda/actualiza documento en colección "users" con uid como ID
+      await setDoc(doc(db, 'users', currentUser.uid), userDocData);
+
+      showToast('success', '¡Perfil creado!', '¡Bienvenido al ring, ' + profileData.apodo + '!');
+
+      setTimeout(() => {
+        window.location.href = 'dashboard.html';
+      }, 1500);
+
+    } catch (err) {
+      console.error('Error guardando perfil:', err);
+      showToast('error', 'Error', 'No se pudo guardar el perfil: ' + err.message);
+      btn.disabled = false;
+      btn.innerHTML = '¡Al ring! 🥊';
+    }
+  };
+
+  // ─── Utils ───────────────────────────────────────────────────────────────
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  window.showToast = function(type, title, message, duration = 4000) {
+    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+      <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
+      <div class="toast-content">
+        <div class="toast-title">${title}</div>
+        <div class="toast-message">${message}</div>
+      </div>
+    `;
+    document.getElementById('toastContainer').appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('fade-out');
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
+  };
+</script>
+
+</body>
+</html>
