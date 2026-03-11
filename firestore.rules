@@ -1,0 +1,55 @@
+// firestore.rules
+// Reglas de seguridad de Firestore para StreetRank.
+// Para desplegar: firebase deploy --only firestore:rules
+// O junto con todo: firebase deploy
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Colección "users" ───────────────────────────────────────────────────
+    // Cualquier usuario autenticado puede leer perfiles (para el ranking y cercanos).
+    // Solo el propio usuario puede escribir/actualizar su documento.
+    match /users/{userId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && validUserData(request.resource.data);
+      allow update: if request.auth != null
+                    && request.auth.uid == userId;
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId;
+    }
+
+    // ─── Colección "challenges" ──────────────────────────────────────────────
+    // Cualquier usuario autenticado puede leer desafíos.
+    // Crear: cualquier usuario autenticado con perfil completo.
+    // Actualizar: solo el destinatario (toUid) o el remitente (fromUid).
+    // Eliminar: el destinatario o el remitente.
+    match /challenges/{challengeId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.fromUid == request.auth.uid
+                    && request.resource.data.status == 'pending';
+      allow update: if request.auth != null
+                    && (resource.data.toUid   == request.auth.uid
+                     || resource.data.fromUid == request.auth.uid);
+      allow delete: if request.auth != null
+                    && (resource.data.toUid   == request.auth.uid
+                     || resource.data.fromUid == request.auth.uid);
+    }
+
+    // ─── Función de validación de datos de usuario ───────────────────────────
+    function validUserData(data) {
+      return data.keys().hasAll(['uid','email','nombre','apodo','pais','ciudad',
+                                 'edad','peso','altura','manoHabil','score',
+                                 'wins','losses','fights','profileComplete'])
+          && data.uid is string
+          && data.email is string
+          && data.nombre is string
+          && data.apodo is string
+          && data.score is number
+          && data.profileComplete is bool;
+    }
+  }
+}
