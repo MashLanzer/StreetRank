@@ -2,23 +2,23 @@
   "name": "StreetRank - El Ring de la Calle",
   "short_name": "StreetRank",
   "description": "Red social y ranking de peleas callejeras. Desafía y sube de nivel.",
-  "start_url": "/index.html",
+  "start_url": "/dashboard.html",
   "display": "standalone",
-  "background_color": "#0d0d0d",
+  "background_color": "#0a0a0a",
   "theme_color": "#c0392b",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "https://api.dicebear.com/7.x/identicon/svg?seed=StreetRank&backgroundColor=c0392b",
+      "src": "icon.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "https://api.dicebear.com/7.x/identicon/svg?seed=StreetRank&backgroundColor=c0392b",
+      "src": "icon.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

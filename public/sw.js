@@ -9,6 +9,7 @@ const ASSETS = [
   '/profile.html',
   '/profile-setup.html',
   '/style.css',
+  '/mobile.css',
   '/app.js',
   '/firebase.js',
   '/manifest.json'

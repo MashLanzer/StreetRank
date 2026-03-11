@@ -1,0 +1,439 @@
+/* 
+  mobile.css - ESTRUCTURA DEFINITIVA NATIVA PARA STREETRANK (PWA 3.0) 
+  Este diseño convierte la web en una aplicación de alto rendimiento.
+  Enfoque: Inmersivo, Táctil (Thumb-Friendly), y Sin-Fricción.
+*/
+
+@media screen and (max-width: 768px) {
+  /* --- 1. CORE & APP SHELL (Estructura de App Nativa) --- */
+  :root {
+    --ios-header: 54px;
+    --ios-nav: 64px;
+    --ios-blur: saturate(180%) blur(25px);
+    --ios-bg: rgba(10, 10, 10, 0.85);
+    
+    --f-xxs: 0.6rem;
+    --f-xs: 0.72rem;
+    --f-sm: 0.85rem;
+    --f-base: 0.95rem;
+    --f-lg: 1.15rem;
+    --f-xl: 1.6rem;
+    
+    --accent: #ff3e2e;
+    --accent-glow: rgba(255, 62, 46, 0.4);
+    --border: rgba(255, 255, 255, 0.08);
+  }
+
+  /* Impedir scroll del "overscroll" y fijar la ventana */
+  html, body {
+    height: 100vh;
+    height: -webkit-fill-available;
+    overflow: hidden; 
+    margin: 0;
+    padding: 0;
+    position: fixed;
+    width: 100%;
+    background: #000;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none; /* Controlado por gestos específicos si se desea */
+  }
+
+  .dashboard-layout {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* --- 2. HEADER FIJO (App Header) --- */
+  .navbar {
+    height: var(--ios-header) !important;
+    background: var(--ios-bg);
+    backdrop-filter: var(--ios-blur);
+    -webkit-backdrop-filter: var(--ios-blur);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    z-index: 1000;
+    padding: 0 15px !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between !important;
+    margin: 0 !important;
+  }
+
+  .navbar-inner {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .navbar-logo {
+    font-size: 1.3rem !important;
+    font-weight: 800;
+    letter-spacing: -1px;
+    margin: 0;
+  }
+
+  .navbar-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .nav-link, .navbar-nav button { display: none !important; }
+
+  .nav-avatar {
+    display: block !important;
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    object-fit: cover;
+  }
+
+  /* --- 3. CONTENIDO PRINCIPAL (Scrollable Area) --- */
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 15px 12px calc(var(--ios-nav) + 20px) 12px !important;
+    margin: 0 !important;
+    background: #050505;
+    touch-action: pan-y; /* Permitir scroll vertical */
+  }
+
+  /* --- 4. BOTTOM DOCK (Navegación Táctil) --- */
+  .sidebar {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    height: calc(var(--ios-nav) + env(safe-area-inset-bottom, 0px)) !important;
+    background: var(--ios-bg) !important;
+    backdrop-filter: var(--ios-blur) !important;
+    -webkit-backdrop-filter: var(--ios-blur) !important;
+    border-top: 1px solid var(--border) !important;
+    border-right: none !important;
+    padding: 0 5px env(safe-area-inset-bottom, 5px) 5px !important;
+    margin: 0 !important;
+    z-index: 2000 !important;
+    display: flex !important;
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.6);
+  }
+
+  .sidebar-header, .sidebar-footer, .sidebar-stats, .profile-card {
+    display: none !important;
+  }
+
+  .sidebar-menu {
+    display: flex !important;
+    flex-direction: row !important;
+    width: 100% !important;
+    height: 100% !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+  }
+
+  .sidebar-menu-item {
+    flex: 1 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    color: #555 !important;
+    font-size: 0.62rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    gap: 2px !important;
+    transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 0 !important;
+  }
+
+  .sidebar-menu-item .icon {
+    font-size: 1.4rem !important;
+    margin: 0 !important;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  .sidebar-menu-item.active {
+    color: var(--accent) !important;
+  }
+
+  .sidebar-menu-item.active .icon {
+    transform: scale(1.15) translateY(-2px);
+    filter: drop-shadow(0 0 10px var(--accent-glow));
+  }
+
+  #sidebarNotifBadge {
+    position: absolute !important;
+    top: 10px !important;
+    right: 20% !important;
+    background: var(--accent) !important;
+    color: white !important;
+    font-size: 0.55rem !important;
+    font-weight: 900 !important;
+    width: 18px !important;
+    height: 18px !important;
+    border-radius: 50% !important;
+    border: 3px solid #0a0a0a !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+  }
+
+  /* --- 5. COMPONENTES NATIVOS DE INTERFAZ --- */
+  
+  /* Ranking de Alta Precisión */
+  .ranking-table { margin: 0 !important; background: transparent !important; border: none !important; }
+  .ranking-table table { display: block; width: 100%; border-collapse: separate; border-spacing: 0 10px; }
+  .ranking-table thead { display: none; }
+  .ranking-table tbody { display: flex; flex-direction: column; gap: 8px; }
+
+  .ranking-row-mobile {
+    display: grid !important;
+    grid-template-columns: 35px 45px 1fr 70px !important;
+    align-items: center;
+    background: #121212 !important;
+    padding: 10px 12px !important;
+    border-radius: 18px !important;
+    border: 1px solid var(--border) !important;
+  }
+
+  .pos-cell {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1.1rem !important;
+    color: var(--accent);
+    text-align: center;
+  }
+
+  .avatar-cell {
+    display: flex;
+    justify-content: center;
+  }
+
+  .ranking-avatar {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    aspect-ratio: 1/1;
+  }
+
+  .user-info-cell {
+    display: flex;
+    flex-direction: column;
+    padding-left: 5px;
+  }
+
+  .user-info-cell strong {
+    font-size: 0.9rem;
+    color: #fff;
+    font-family: 'Oswald', sans-serif;
+  }
+
+  .user-info-cell .meta {
+    font-size: 0.65rem;
+    color: #777;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .score-cell-mobile {
+    text-align: right;
+  }
+
+  .score-cell-mobile span {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1.3rem;
+    color: #f39c12;
+    display: block;
+    line-height: 1;
+  }
+
+  .score-cell-mobile small {
+    font-size: 0.5rem;
+    color: #555;
+    letter-spacing: 1px;
+    font-weight: 800;
+  }
+
+  /* Mi posición destacada */
+  .ranking-row-mobile.is-me {
+    border: 1.5px solid var(--accent) !important;
+    background: linear-gradient(90deg, #1a1a1a, #050505) !important;
+    box-shadow: inset 2px 0 15px rgba(255, 62, 46, 0.1);
+  }
+
+  /* Tarjetas de Cercanos (Mobile Grid) */
+  .fighters-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+  .fighter-card {
+    background: #111 !important;
+    border-radius: 20px !important;
+    padding: 15px 10px !important;
+    border: 1px solid var(--border) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+    margin: 0 !important;
+  }
+  .fighter-card-avatar {
+    width: 60px !important;
+    height: 60px !important;
+    border-radius: 50% !important;
+    border: 2px solid var(--accent) !important;
+    margin: 0 auto 8px auto !important;
+    object-fit: cover !important;
+    aspect-ratio: 1/1 !important;
+  }
+  .fighter-card-apodo { font-size: 0.9rem !important; margin-bottom: 2px !important; color: #fff !important; }
+  .fighter-card-name { display: none; }
+  .fighter-card-score { 
+    font-size: 1.1rem !important; 
+    color: #f39c12 !important; 
+    font-family: 'Bebas Neue' !important; 
+    margin: 4px 0 !important; 
+  }
+  .fighter-card-location { font-size: 0.65rem !important; color: #777 !important; }
+
+  /* --- 6. MODALES (iOS Action Sheet Layout) --- */
+  .modal-overlay {
+    background: rgba(0, 0, 0, 0.85) !important;
+    backdrop-filter: blur(8px);
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: 500px !important;
+    border-radius: 24px 24px 0 0 !important;
+    padding: 25px 20px 40px 20px !important;
+    background: #0d0d0d !important;
+    border-top: 2px solid var(--accent) !important;
+    animation: actionSheet 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+  }
+
+  @keyframes actionSheet {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  .modal-title { font-size: 1.2rem !important; margin-bottom: 1.2rem !important; text-align: center; }
+  .modal-actions { flex-direction: column !important; gap: 10px !important; }
+  .modal-actions .btn { width: 100% !important; padding: 16px !important; font-size: 1rem !important; border-radius: 14px !important; }
+
+  /* Botones de acción específicos */
+  .btn-success { background: #27ae60 !important; }
+  .btn-danger { background: #c0392b !important; }
+
+  /* --- 7. TOASTS & BADGES --- */
+  .toast-container {
+    top: calc(var(--ios-header) + 10px) !important;
+    width: 90% !important;
+    left: 5% !important;
+  }
+
+  .toast {
+    width: 100% !important;
+    background: rgba(20, 20, 20, 0.9) !important;
+    border-radius: 14px !important;
+    border-left: 5px solid var(--accent) !important;
+  }
+
+  /* --- 8. PERFIL (Ultra-Density View) --- */
+  .profile-page-header {
+    background: #111 !important;
+    border-radius: 22px !important;
+    padding: 25px 15px !important;
+    border: 1px solid var(--border) !important;
+  }
+
+  .profile-page-avatar { width: 100px !important; height: 100px !important; border-width: 3px !important; }
+  .profile-page-apodo { font-size: 1.6rem !important; letter-spacing: -0.5px; }
+  .profile-big-score { font-size: 3rem !important; color: var(--accent) !important; line-height: 0.9; }
+
+  #statsGrid { grid-template-columns: repeat(3, 1fr) !important; gap: 8px !important; }
+  #statsGrid .card { padding: 12px 5px !important; border-radius: 15px !important; background: #0a0a0a !important; }
+  #statsGrid .card div:first-child { font-size: 1.6rem !important; color: #fff !important; line-height: 1; }
+  #statsGrid .card div:last-child { font-size: 0.5rem !important; opacity: 0.5; margin-top: 4px; }
+
+  /* Historial de Peleas (List View) */
+  .fight-history-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  .fight-card-rich {
+    background: #111 !important;
+    border-radius: 16px !important;
+    padding: 12px !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    border: none !important;
+    border-left: 4px solid #333 !important;
+  }
+  .fight-card-rich.win { border-left-color: var(--success) !important; }
+  .fight-card-rich.loss { border-left-color: var(--danger) !important; }
+  
+  .fight-card-header { display: none !important; }
+  .fight-card-body { 
+    display: flex !important; 
+    width: 100% !important; 
+    justify-content: space-between !important; 
+    align-items: center !important;
+    padding: 0 !important;
+  }
+  .opponent-info { display: flex !important; align-items: center !important; gap: 10px !important; }
+  .opp-avatar { 
+    width: 44px !important; 
+    height: 44px !important; 
+    border-radius: 50% !important; 
+    object-fit: cover !important;
+    aspect-ratio: 1/1 !important;
+    border: 1.5px solid var(--border) !important;
+  }
+  .opp-apodo { font-size: 0.9rem !important; font-weight: 700 !important; color: #fff !important; margin: 0 !important; }
+  .opp-score { font-size: 0.65rem !important; opacity: 0.5 !important; }
+
+  .score-delta { text-align: right !important; }
+  .delta-value { 
+    font-family: 'Bebas Neue' !important; 
+    font-size: 1.5rem !important; 
+    line-height: 1 !important; 
+  }
+  .delta-label { font-size: 0.55rem !important; text-transform: uppercase !important; }
+
+  /* --- 9. UTILS & SKELETONS --- */
+  .skeleton-shimmer {
+    background: linear-gradient(90deg, #111 25%, #1a1a1a 50%, #111 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+}

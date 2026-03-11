@@ -1,6 +1,6 @@
 /**
- * app.js - StreetRank Main Logic
- * Refactored for Real-time Ranking, Rich History and Independent Points Sync
+ * app.js - StreetRank 3.0 Native Logic
+ * Re-engineered for App Shell Architecture and Native UX.
  */
 
 import { auth, db } from './firebase.js';
@@ -13,17 +13,23 @@ import {
   onSnapshot, arrayUnion, serverTimestamp, GeoPoint, increment
 } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
-// --- Estado Global ---
+// --- Global State ---
 let currentUser = null;
 let currentUserData = null;
 let userCoords = null;
 let activeListeners = [];
 let activeChallengeId = null;
 let activeChallengeData = null;
+let processedFights = new Set();
 
 const loader = document.getElementById('loader');
 
-// --- Auth Check ---
+// --- Haptic / Vibrate ---
+const haptic = (type = 50) => {
+  if (navigator.vibrate) navigator.vibrate(type);
+};
+
+// --- Auth Initialization ---
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
     window.location.href = 'index.html';
@@ -31,6 +37,7 @@ onAuthStateChanged(auth, async (user) => {
   }
   currentUser = user;
 
+  // Global user listener
   const userRef = doc(db, 'users', user.uid);
   const unsubUser = onSnapshot(userRef, (snap) => {
     if (snap.exists()) {
@@ -42,8 +49,9 @@ onAuthStateChanged(auth, async (user) => {
       renderSidebar(currentUserData);
       if (document.getElementById('sectionFights').classList.contains('active')) loadMyFights();
     }
-  });
+  }, (err) => console.error("Error User Snapshot:", err));
   activeListeners.push(unsubUser);
+
   initApp();
 });
 
@@ -53,48 +61,55 @@ function initApp() {
   if (loader) loader.classList.add('hidden');
 }
 
-// --- Listeners de tiempo real ---
+// --- Real-time Listeners ---
 function startGlobalListeners() {
   const userSnap = activeListeners[0];
   activeListeners.slice(1).forEach(unsub => unsub());
   activeListeners = [userSnap];
 
-  // RANKING REAL-TIME
+  // 1. Ranking
   const qRanking = query(collection(db, 'users'), orderBy('score', 'desc'), limit(50));
   activeListeners.push(onSnapshot(qRanking, (snap) => {
     renderRankingList(snap.docs);
   }));
 
-  // DESAFÍOS RECIBIDOS
+  // 2. Received Challenges
   const qReceived = query(collection(db, 'challenges'), where('toUid', '==', currentUser.uid));
   activeListeners.push(onSnapshot(qReceived, (snap) => {
-    const pendCount = snap.docs.filter(d => ['pending','postponed'].includes(d.data().status)).length;
-    updateNotifBadges(pendCount);
+    const activeDocs = snap.docs.filter(d => ['pending','postponed'].includes(d.data().status));
+    updateNotifBadges(activeDocs.length);
+    
+    // Auto-modal on new challenge
     snap.docChanges().forEach(change => {
-      if (change.type === 'added' && change.doc.data().status === 'pending') {
-        if (!document.getElementById('challengeModal').classList.contains('open')) {
-          showChallengeModal({ id: change.doc.id, ...change.doc.data() });
+      const c = change.doc.data();
+      if (change.type === 'added' && c.status === 'pending') {
+        const modal = document.getElementById('challengeModal');
+        if (!modal.classList.contains('open')) {
+          showChallengeModal({ id: change.doc.id, ...c });
         }
       }
     });
+
     if (document.getElementById('sectionNotifications').classList.contains('active')) refreshNotificationsUI();
   }));
 
-  // DESAFÍOS ENVIADOS
+  // 3. Sent Challenges Feedback
   const qSent = query(collection(db, 'challenges'), where('fromUid', '==', currentUser.uid));
   activeListeners.push(onSnapshot(qSent, (snap) => {
     snap.docChanges().forEach(change => {
       if (change.type === 'modified') {
         const c = change.doc.data();
-        if (c.status === 'postponed') showToast('info', 'Pospuesto', `${c.toApodo} lo pospuso 1h.`);
-        if (c.status === 'rejected') showToast('warning', 'Rechazado', `${c.toApodo} rechazó.`);
-        if (c.status === 'accepted') showToast('success', '¡ACEPTADO!', `¡A pelear contra ${c.toApodo}!`);
+        if (c.status === 'accepted') {
+          haptic([100, 50, 100]);
+          showToast('success', '¡A PELEAR!', `${c.toApodo} aceptó tu reto.`);
+        }
+        if (c.status === 'rejected') showToast('warning', 'Reto Rechazado', `${c.toApodo} no quiso pelear.`);
       }
     });
     if (document.getElementById('sectionNotifications').classList.contains('active')) refreshNotificationsUI();
   }));
 
-  // PELEAS Y CONSENSO AUTOMÁTICO
+  // 4. Consensus Check
   const qFights = query(
     collection(db, 'fights'),
     where('status', '==', 'waiting_report'),
@@ -103,8 +118,7 @@ function startGlobalListeners() {
   activeListeners.push(onSnapshot(qFights, (snap) => {
     snap.docs.forEach(d => {
       const f = d.data();
-      // Si ambos reportaron, procesar puntos
-      if (f.reportA && f.reportB) {
+      if (f.reportA && f.reportB && f.status === 'waiting_report') {
         processConsensus(d.id, f);
       }
     });
@@ -112,85 +126,87 @@ function startGlobalListeners() {
   }));
 }
 
-// --- Lógica de Desafíos ---
+// --- Challenge Actions ---
 window.rejectChallenge = async function() {
   if (!activeChallengeId) return;
+  haptic(20);
   try {
     const penalty = 10;
     const newScore = Math.max(100, (currentUserData.score || 1000) - penalty);
     await updateDoc(doc(db, 'users', currentUser.uid), { score: newScore, updatedAt: serverTimestamp() });
     await updateDoc(doc(db, 'challenges', activeChallengeId), { status: 'rejected' });
-    showToast('info', 'Penalización 💀', `-${penalty} pts.`);
+    showToast('info', 'Cobardía...', `Perdiste ${penalty} pts.`);
     closeChallengeModal();
-  } catch (err) { console.error(err); }
+  } catch (err) { showToast('error', 'Error', 'Fallo técnico.'); }
 };
 
 window.postponeChallenge = async function() {
   if (!activeChallengeId) return;
+  haptic(10);
   try {
     await updateDoc(doc(db, 'challenges', activeChallengeId), { status: 'postponed', timestamp: serverTimestamp() });
-    showToast('info', 'Pospuesto', 'Rival avisado.');
+    showToast('info', 'Pospuesto', 'Rival avisado. Tienes 1h para aceptar.');
     closeChallengeModal();
-  } catch (err) { console.error(err); }
+  } catch (err) { showToast('error', 'Error', 'No se pudo posponer.'); }
 };
 
 window.acceptChallenge = async function() {
   if (!activeChallengeId || !activeChallengeData) return;
+  haptic([50, 20, 50]);
   try {
     const fromUserSnap = await getDoc(doc(db, 'users', activeChallengeData.fromUid));
+    if (!fromUserSnap.exists()) throw new Error("Peleador no encontrado.");
     const fromUserData = fromUserSnap.data();
 
     await updateDoc(doc(db, 'challenges', activeChallengeId), { status: 'accepted' });
+    
     await addDoc(collection(db, 'fights'), {
-      playerA: activeChallengeData.fromUid, 
-      playerAApodo: activeChallengeData.fromApodo, 
-      playerAScore: activeChallengeData.fromScore,
-      playerAPhoto: fromUserData.photoURL,
-      playerB: currentUser.uid, 
-      playerBApodo: currentUserData.apodo, 
-      playerBScore: currentUserData.score,
-      playerBPhoto: currentUserData.photoURL,
+      playerA: activeChallengeData.fromUid, playerAApodo: activeChallengeData.fromApodo, playerAScore: activeChallengeData.fromScore,
+      playerAPhoto: fromUserData.photoURL || '',
+      playerB: currentUser.uid, playerBApodo: currentUserData.apodo, playerBScore: currentUserData.score || 1000,
+      playerBPhoto: currentUserData.photoURL || '',
       players: [activeChallengeData.fromUid, currentUser.uid],
-      status: 'waiting_report', 
-      reportA: null, reportB: null, 
-      processedA: false, processedB: false, // Control de puntos procesados
+      status: 'waiting_report', reportA: null, reportB: null, processedA: false, processedB: false,
       createdAt: serverTimestamp()
     });
-    showToast('success', '¡Aceptado!', 'Reportad al terminar.');
+    
+    showToast('success', '¡DESAFÍO ACEPTADO!', 'Reporta el resultado tras la pelea.');
     closeChallengeModal();
-  } catch (err) { console.error(err); }
+  } catch (err) { showToast('error', 'Error', err.message); }
 };
 
 window.withdrawChallenge = async function(id) {
+  haptic(10);
   try {
     await deleteDoc(doc(db, 'challenges', id));
-    showToast('info', 'Retirado', 'Cancelado.');
+    showToast('info', 'Retirado', 'Desafío cancelado.');
     refreshNotificationsUI();
-  } catch (err) { console.error(err); }
+  } catch (err) { showToast('error', 'Error', 'No se pudo retirar.'); }
 };
 
-// --- Consenso y Puntos ---
+// --- Consensus Logic ---
 function renderPendingFights(snap) {
   const container = document.getElementById('pendingFightsReport');
   if (!container) return;
   const pending = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (pending.length === 0) { container.innerHTML = ''; return; }
+  
   container.innerHTML = `
-    <div class="card mb-2 animate-glow" style="border-left:5px solid var(--gold);">
-      <div class="card-header"><span class="card-title">⚔️ Reportar Resultado de Pelea</span></div>
-      <div class="p-1">
+    <div class="pending-fight-container animate-in">
+      <div class="pending-header">⚔️ RESULTADO PENDIENTE</div>
+      <div class="pending-list">
         ${pending.map(f => {
-          const isMeA = f.playerA === currentUser.uid;
-          const myRep = isMeA ? f.reportA : f.reportB;
-          const oppApodo = isMeA ? f.playerBApodo : f.playerAApodo;
-          if (myRep) return `<p style="font-size:0.85rem;color:var(--text-muted);padding:0.5rem;">⏳ Reportado. Esperando reporte de <strong>${oppApodo}</strong>...</p>`;
+          const isA = f.playerA === currentUser.uid;
+          const rep = isA ? f.reportA : f.reportB;
+          const opp = isA ? f.playerBApodo : f.playerAApodo;
+          if (rep) return `<div class="pending-waiting">⏳ Esperando a <strong>${opp}</strong>...</div>`;
           return `
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; background:rgba(255,183,18,0.05); border-radius:8px; margin-bottom:0.5rem;">
-              <span style="font-size:0.9rem;">vs <strong>${oppApodo}</strong></span>
-              <div style="display:flex; gap:0.5rem;">
-                <button class="btn btn-success btn-sm" onclick="reportFight('${f.id}', 'win')">🏆 Gané</button>
-                <button class="btn btn-secondary btn-sm" onclick="reportFight('${f.id}', 'draw')">🤝 Empate</button>
-                <button class="btn btn-danger btn-sm" onclick="reportFight('${f.id}', 'loss')">💀 Perdí</button>
+            <div class="pending-item">
+              <span class="vs-text">vs <strong>${opp}</strong></span>
+              <div class="report-btns">
+                <button class="btn btn-success btn-sm" onclick="reportFight('${f.id}','win')">🏆</button>
+                <button class="btn btn-secondary btn-sm" onclick="reportFight('${f.id}','draw')">🤝</button>
+                <button class="btn btn-danger btn-sm" onclick="reportFight('${f.id}','loss')">💀</button>
               </div>
             </div>`;
         }).join('')}
@@ -198,169 +214,136 @@ function renderPendingFights(snap) {
     </div>`;
 }
 
-window.reportFight = async function(fightId, result) {
+window.reportFight = async function(id, res) {
+  haptic(30);
   try {
-    const snap = await getDoc(doc(db, 'fights', fightId));
-    const isMeA = snap.data().playerA === currentUser.uid;
-    await updateDoc(doc(db, 'fights', fightId), isMeA ? { reportA: result } : { reportB: result });
-    showToast('info', 'Registrado', 'Esperando validación cruzada.');
-  } catch (err) { showToast('error', 'Error', err.message); }
+    const isA = (await getDoc(doc(db, 'fights', id))).data().playerA === currentUser.uid;
+    await updateDoc(doc(db, 'fights', id), isA ? { reportA: res } : { reportB: res });
+    showToast('info', 'Reportado', 'Esperando rival...');
+  } catch (err) { showToast('error', 'Error', 'No se pudo enviar.'); }
 };
 
 async function processConsensus(id, f) {
-  const isMeA = f.playerA === currentUser.uid;
-  const processed = isMeA ? f.processedA : f.processedB;
-  if (processed) return; // Ya reclamamos nuestros puntos
+  const isA = f.playerA === currentUser.uid;
+  const alreadyDone = isA ? f.processedA : f.processedB;
+  if (alreadyDone || processedFights.has(`${id}-${currentUser.uid}`)) return;
 
-  const rA = f.reportA; const rB = f.reportB; 
-  const myRes = isMeA ? rA : rB;
-  let valid = (rA === 'win' && rB === 'loss') || (rA === 'loss' && rB === 'win') || (rA === 'draw' && rB === 'draw');
+  const rA = f.reportA; const rB = f.reportB;
+  const valid = (rA==='win' && rB==='loss') || (rA==='loss' && rB==='win') || (rA==='draw' && rB==='draw');
 
   if (valid) {
-    const myOldScore = isMeA ? f.playerAScore : f.playerBScore;
-    const oppOldScore = isMeA ? f.playerBScore : f.playerAScore;
-    const S = myRes === 'win' ? 1 : myRes === 'draw' ? 0.5 : 0;
-    const Ea = 1 / (1 + Math.pow(10, (oppOldScore - myOldScore) / 400));
-    const k = 32;
-    const diff = Math.round(k * (S - Ea));
-    const newScore = Math.max(100, myOldScore + diff);
+    processedFights.add(`${id}-${currentUser.uid}`);
+    const myOld = isA ? f.playerAScore : f.playerBScore;
+    const oppOld = isA ? f.playerBScore : f.playerAScore;
+    const resValue = (isA ? rA : rB) === 'win' ? 1 : (isA ? rA : rB) === 'draw' ? 0.5 : 0;
+    const diff = Math.round(32 * (resValue - (1 / (1 + Math.pow(10, (oppOld - myOld) / 400)))));
+    const myRes = isA ? rA : rB;
 
-    const historyItem = {
-      opponent: isMeA ? f.playerBApodo : f.playerAApodo,
-      opponentPhoto: isMeA ? (f.playerBPhoto || '') : (f.playerAPhoto || ''),
-      opponentScore: oppOldScore,
-      myScoreBefore: myOldScore,
-      resultado: myRes,
-      puntos: diff,
-      fecha: new Date().toISOString(),
-      fightId: id
-    };
+    const userUp = { score: Math.max(100, myOld + diff), updatedAt: serverTimestamp(), fights: arrayUnion({
+      opponent: isA ? f.playerBApodo : f.playerAApodo,
+      opponentPhoto: isA ? f.playerBPhoto : f.playerAPhoto,
+      resultado: myRes, puntos: diff, fecha: new Date().toISOString()
+    })};
+    if (myRes==='win') userUp.wins = increment(1); else if (myRes==='loss') userUp.losses = increment(1); else userUp.draws = increment(1);
 
-    const updates = {
-      score: newScore,
-      updatedAt: serverTimestamp(),
-      fights: arrayUnion(historyItem)
-    };
-    if (myRes === 'win') updates.wins = increment(1);
-    else if (myRes === 'loss') updates.losses = increment(1);
-    else if (myRes === 'draw') updates.draws = increment(1);
-
-    // 1. Reclamar puntos
-    await updateDoc(doc(db, 'users', currentUser.uid), updates);
-    
-    // 2. Marcar como procesado para MI
-    const fightUpdates = isMeA ? { processedA: true } : { processedB: true };
-    await updateDoc(doc(db, 'fights', id), fightUpdates);
-
-    // 3. Si AMBOS procesaron, cerrar pelea
-    const updatedSnap = await getDoc(doc(db, 'fights', id));
-    const upF = updatedSnap.data();
-    if (upF.processedA && upF.processedB) {
-      await updateDoc(doc(db, 'fights', id), { status: 'completed' });
-    }
-    
-    showToast('success', '¡Puntos Sincronizados!', `${diff >= 0 ? '+' : ''}${diff} pts.`);
+    try {
+      await updateDoc(doc(db, 'users', currentUser.uid), userUp);
+      await updateDoc(doc(db, 'fights', id), isA ? { processedA: true } : { processedB: true });
+      const upF = (await getDoc(doc(db, 'fights', id))).data();
+      if (upF.processedA && upF.processedB) await updateDoc(doc(db, 'fights', id), { status: 'completed' });
+      haptic(100);
+      showToast('success', '¡Consenso!', `${diff >= 0 ? '+' : ''}${diff} ELO.`);
+    } catch(e) { processedFights.delete(`${id}-${currentUser.uid}`); }
   } else {
-    // Si los reportes son contradictorios
     await updateDoc(doc(db, 'fights', id), { status: 'disputed' });
-    showToast('error', '⚠️ FRAUDE', 'Los reportes no coinciden. Pelea anulada.');
+    showToast('error', 'Conflicto', 'Resultados contradictorios.');
   }
 }
 
-// --- UI / Listados ---
+// --- Dynamic Rendering ---
 function renderRankingList(docs) {
   const tbody = document.getElementById('rankingBody');
   if (!tbody) return;
-  let html = '';
-  docs.forEach((doc, i) => {
-    const f = doc.data(); const isMe = f.uid === currentUser.uid; const lv = getLevel(f.score || 1000);
-    html += `
-      <tr class="animate-in" style="${isMe ? 'background:rgba(192,57,43,0.15); border-left: 2px solid var(--red-primary);' : ''}">
-        <td>${i+1}</td>
-        <td>
-          <div style="display:flex;align-items:center;gap:0.5rem;">
-            <img src="${f.photoURL}" style="width:30px;height:30px;border-radius:50%;border:1px solid var(--red-primary);"/>
-            <div style="display:flex; flex-direction:column;">
-               <strong>${escHtml(f.apodo)}</strong>
-               <small style="font-size:0.6rem; color:var(--text-muted)">${f.ciudad || ''}</small>
+  const isMobile = window.innerWidth <= 768;
+  const html = docs.map((d, i) => {
+    const f = d.data(); const isMe = f.uid === currentUser.uid; const lv = getLevel(f.score || 1000);
+    if (isMobile) {
+      return `
+        <tr class="ranking-row-mobile animate-in ${isMe ? 'is-me' : ''}">
+          <td class="pos-cell">${i+1}</td>
+          <td class="avatar-cell">
+            <img src="${f.photoURL || ''}" class="ranking-avatar"/>
+          </td>
+          <td class="user-info-cell">
+            <strong>${escHtml(f.apodo)}</strong>
+            <div class="meta">
+              <span class="level-badge ${lv.cls}" style="font-size:0.5rem;padding:1px 4px;">${lv.label}</span>
+              <span>• ${escHtml(f.ciudad || 'Calle')}</span>
             </div>
-          </div>
-        </td>
-        <td><span class="score-badge">${f.score || 1000}</span></td>
-        <td><span class="level-badge ${lv.cls}">${lv.label}</span></td>
-        <td>${escHtml(f.pais || '—')}</td>
-      </tr>`;
-  });
+          </td>
+          <td class="score-cell-mobile">
+            <span>${f.score || 1000}</span>
+            <small>ELO</small>
+          </td>
+        </tr>`;
+    } else {
+      // RESTAURADO DESKTOP ORIGINAL
+      return `
+        <tr class="animate-in" style="${isMe ? 'background:rgba(192,57,43,0.15); border-left: 2px solid var(--red-primary);' : ''}">
+          <td>${i+1}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+              <img src="${f.photoURL || ''}" style="width:34px;height:34px;border-radius:50%;border:1px solid var(--border-color);"/>
+              <strong style="color:var(--text-primary);">${escHtml(f.apodo)}</strong>
+            </div>
+          </td>
+          <td><span class="score-badge">${f.score || 1000}</span></td>
+          <td>${f.wins || 0}W / ${f.losses || 0}L</td>
+          <td>${escHtml(f.pais || '—')}</td>
+        </tr>`;
+    }
+  }).join('');
   tbody.innerHTML = html;
 }
 
 async function refreshNotificationsUI() {
   const container = document.getElementById('notificationsContent');
   if (!container) return;
-  try {
-    const qRec = query(collection(db, 'challenges'), where('toUid', '==', currentUser.uid), limit(15));
-    const qSent = query(collection(db, 'challenges'), where('fromUid', '==', currentUser.uid), limit(15));
-    const [skRec, skSent] = await Promise.all([getDocs(qRec), getDocs(qSent)]);
-    const rec = skRec.docs.map(d => ({id:d.id, ...d.data()})).filter(c => ['pending','postponed'].includes(c.status));
-    const sent = skSent.docs.map(d => ({id:d.id, ...d.data()})).filter(c => ['pending','postponed'].includes(c.status));
-
-    if (!rec.length && !sent.length) {
-      container.innerHTML = '<div class="empty-state"><h3>Sin desafíos</h3></div>';
-      return;
-    }
-
-    container.innerHTML = `
-      <div class="notification-list">
-        ${rec.map(c => `
-          <div class="notification-item received">
-            <div class="notification-content">
-              <div class="notification-title">📩 <strong>${escHtml(c.fromApodo)}</strong></div>
-              <div class="notification-time">${c.status==='postponed'?'⏳ POSPUESTO':'🆕 RECIBIDO'}</div>
-            </div>
-            <div style="display:flex; gap:0.4rem;">
-              <button class="btn btn-success btn-sm" onclick="acceptFromList('${c.id}')">Aceptar</button>
-              <button class="btn btn-danger btn-sm" onclick="rejectFromList('${c.id}')">No</button>
-            </div>
-          </div>`).join('')}
-        ${sent.map(c => `
-          <div class="notification-item sent" style="opacity:0.85;">
-            <div class="notification-content">
-              <div class="notification-title">📤 <strong>${escHtml(c.toApodo)}</strong></div>
-              <div class="notification-time">${c.status==='postponed'?'⏳ Rival lo pospuso':'🕒 Pendiente...'}</div>
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="withdrawChallenge('${c.id}')">Retirar</button>
-          </div>`).join('')}
-      </div>`;
-  } catch (e) { console.error(e); }
+  const qR = query(collection(db, 'challenges'), where('toUid','==',currentUser.uid), limit(15));
+  const qS = query(collection(db, 'challenges'), where('fromUid','==',currentUser.uid), limit(15));
+  const [skR, skS] = await Promise.all([getDocs(qR), getDocs(qS)]);
+  const rec = skR.docs.map(d=>({id:d.id, ...d.data()})).filter(c=>['pending','postponed'].includes(c.status));
+  const sent = skS.docs.map(d=>({id:d.id, ...d.data()})).filter(c=>['pending','postponed'].includes(c.status));
+  
+  if (!rec.length && !sent.length) { container.innerHTML = '<div class="empty-state"><h3>Sin novedades</h3></div>'; return; }
+  
+  container.innerHTML = `
+    <div class="notification-list">
+      ${rec.map(c => `
+        <div class="notification-item animate-in">
+          <div style="flex:1;">
+            <strong>${escHtml(c.fromApodo)}</strong>
+            <small style="display:block;opacity:0.6;">${c.status==='postponed'?'⏳ Pospuesto':'🥊 Te desafía'}</small>
+          </div>
+          <div style="display:flex;gap:5px;">
+            <button class="btn btn-success btn-sm" onclick="acceptFromList('${c.id}')">SI</button>
+            <button class="btn btn-danger btn-sm" onclick="rejectFromList('${c.id}')">NO</button>
+          </div>
+        </div>`).join('')}
+      ${sent.map(c => `
+        <div class="notification-item animate-in" style="opacity:0.75;">
+          <div style="flex:1;">
+            <strong>A ${escHtml(c.toApodo)}</strong>
+            <small style="display:block;opacity:0.6;">${c.status==='postponed'?'Lo pospuso':'🕒 Pendiente'}</small>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="withdrawChallenge('${c.id}')">Retirar</button>
+        </div>`).join('')}
+    </div>`;
 }
 
-window.acceptFromList = async function(id) {
-  const snap = await getDoc(doc(db, 'challenges', id));
-  activeChallengeId = id; activeChallengeData = snap.data();
-  acceptChallenge();
-};
-window.rejectFromList = (id) => { activeChallengeId = id; rejectChallenge(); };
-
-// --- UI / Nav / Fights ---
-function renderSidebar(d) {
-  if (!d) return;
-  const av = document.getElementById('sidebarAvatar');
-  if (av) av.src = d.photoURL;
-  document.getElementById('sidebarName').textContent = d.nombre;
-  document.getElementById('sidebarApodo').textContent = `"${d.apodo}"`;
-  document.getElementById('sidebarScore').textContent = d.score || 1000;
-  
-  const w = d.wins || 0; const l = d.losses || 0; const dr = d.draws || 0;
-  const tot = w + l + dr; const wr = tot > 0 ? Math.round((w / tot) * 100) : 0;
-  if (document.getElementById('sidebarWins')) document.getElementById('sidebarWins').textContent = w;
-  if (document.getElementById('sidebarLosses')) document.getElementById('sidebarLosses').textContent = l;
-  if (document.getElementById('sidebarWinRate')) document.getElementById('sidebarWinRate').textContent = `${wr}%`;
-  
-  const navAv = document.getElementById('navAvatar');
-  if (navAv) { navAv.src = d.photoURL || ''; navAv.style.display = 'block'; }
-}
-
+// --- Public Window Functions ---
 window.showSection = function(name) {
+  haptic(10);
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.sidebar-menu-item').forEach(m => m.classList.remove('active'));
   const sc = document.getElementById(`section${name.charAt(0).toUpperCase() + name.slice(1)}`);
@@ -369,118 +352,158 @@ window.showSection = function(name) {
   if (mn) mn.classList.add('active');
   if (name === 'fights') loadMyFights();
   if (name === 'notifications') refreshNotificationsUI();
+  
+  // Soporte para scroll en Desktop y Mobile
+  window.scrollTo(0, 0); 
+  const mc = document.querySelector('.main-content');
+  if (mc) mc.scrollTop = 0;
 };
 
 window.loadMyFights = () => {
   const el = document.getElementById('fightsContent'); if (!el || !currentUserData) return;
   const fts = currentUserData.fights || [];
-  if (!fts.length) { el.innerHTML = '<div class="empty-state"><h3>Sin peleas</h3><p>Pronto aquí tu historial.</p></div>'; return; }
+  if (!fts.length) { el.innerHTML = '<div class="empty-state"><h3>Sin peleas registradas</h3></div>'; return; }
   
+  // RESTAURADO DESKTOP ORIGINAL (fight-history-grid + fight-card-rich)
   el.innerHTML = `<div class="fight-history-grid">${fts.slice().reverse().map(f => {
-    const resClass = f.resultado === 'win' ? 'win' : f.resultado === 'loss' ? 'loss' : 'draw';
-    const resText = f.resultado === 'win' ? 'VICTORIA' : f.resultado === 'loss' ? 'DERROTA' : 'EMPATE';
-    const pointsText = f.puntos >= 0 ? `+${f.puntos}` : f.puntos;
-    const dateFormatted = new Date(f.fecha).toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const resClass = f.resultado || 'draw';
+    const resText = f.resultado === 'win' ? 'GANADA' : f.resultado === 'loss' ? 'PERDIDA' : 'EMPATE';
+    const diff = f.puntos !== undefined ? f.puntos : 0;
+    const dateStr = f.fecha ? new Date(f.fecha).toLocaleDateString() : '—';
     
     return `
       <div class="fight-card-rich ${resClass} animate-in">
         <div class="fight-card-header">
-          <div class="fight-date">${dateFormatted}</div>
-          <div class="fight-result-badge">${resText}</div>
+           <span class="fight-date">📅 ${dateStr}</span>
+           <span class="fight-result-badge">${resText}</span>
         </div>
         <div class="fight-card-body">
-          <div class="opponent-info">
-            <img src="${f.opponentPhoto || 'https://api.dicebear.com/7.x/identicon/svg?seed='+f.opponent}" class="opp-avatar"/>
-            <div class="opp-details">
-              <div class="opp-apodo">vs "${escHtml(f.opponent)}"</div>
-              <div class="opp-score">ELO Rival: ${f.opponentScore || '—'}</div>
-            </div>
-          </div>
-          <div class="score-delta">
-            <div class="delta-value">${pointsText}</div>
-            <div class="delta-label">puntos</div>
-          </div>
+           <div class="opponent-info">
+              <img src="${f.opponentPhoto || ''}" class="opp-avatar"/>
+              <div>
+                <div class="opp-apodo">${escHtml(f.opponent)}</div>
+                <div class="opp-score">Rival Score: ${f.opponentScore || '—'}</div>
+              </div>
+           </div>
+           <div class="score-delta">
+              <div class="delta-value">${diff >= 0 ? '+' : ''}${diff}</div>
+              <div class="delta-label">ELO</div>
+           </div>
         </div>
-        <div class="fight-card-footer">
-          <span>Mi Score antes: <strong>${f.myScoreBefore || '—'}</strong></span>
-          <span>Actual: <strong>${(f.myScoreBefore || 0) + (f.puntos || 0)}</strong></span>
-        </div>
-      </div>
-    `;
+      </div>`;
   }).join('')}</div>`;
 };
 
 window.findNearbyFighters = async function() {
-  const el = document.getElementById('nearbyContent');
-  if (!userCoords) { showToast('warning', 'GPS Requerido', 'Activa tu ubicación.'); return; }
-  el.innerHTML = '<div class="text-center p-3"><span class="spinner-sm"></span> Buscando rivales...</div>';
+  const el = document.getElementById('nearbyContent'); if (!userCoords) { showToast('warning','GPS','Activa tu ubicación.'); return; }
+  el.innerHTML = '<div class="skeleton-shimmer" style="height:200px;border-radius:20px;"></div>';
   try {
-    const snap = await getDocs(query(collection(db, 'users'), limit(50)));
+    const snap = await getDocs(query(collection(db,'users'), limit(50)));
     const nearby = [];
     snap.forEach(d => {
-      const f = d.data(); if (f.uid === currentUser.uid || !f.location) return;
+      const f = d.data(); if(f.uid === currentUser.uid || !f.location) return;
       const dist = haversineKm(userCoords.lat, userCoords.lng, f.location.latitude, f.location.longitude);
-      if (dist <= 50) nearby.push({ ...f, dist });
+      if(dist <= 50) nearby.push({...f, dist});
     });
-    if (!nearby.length) { el.innerHTML = '<p class="text-center p-3">Nadie cerca.</p>'; return; }
+    if(!nearby.length) { el.innerHTML = '<div class="empty-state"><h3>No hay nadie en el radar</h3></div>'; return; }
+    
+    // RESTAURADO DESKTOP ORIGINAL (fighters-grid + fighter-card)
     el.innerHTML = `<div class="fighters-grid">${nearby.sort((a,b)=>a.dist-b.dist).map(f => `
-      <div class="fighter-card animate-in">
-        <img src="${f.photoURL}" class="fighter-card-avatar" style="width:60px;height:60px;border-radius:50%;border:2px solid var(--red-primary);"/>
+      <div class="fighter-card animate-in" onclick="sendChallenge('${f.uid}','${f.apodo}',${f.score||1000})">
+        <img src="${f.photoURL || ''}" class="fighter-card-avatar"/>
         <div class="fighter-card-apodo">"${escHtml(f.apodo)}"</div>
-        <div class="fighter-card-score">${f.score || 1000} ELO</div>
+        <div class="fighter-card-name">${escHtml(f.nombre)}</div>
+        <div class="fighter-card-score">${f.score || 1000}</div>
         <div class="fighter-card-location">📍 a ${f.dist.toFixed(1)} km</div>
-        <button class="btn btn-primary btn-sm btn-full mt-1" onclick="sendChallenge('${f.uid}','${f.apodo}',${f.score||1000})">⚔️ Desafiar</button>
+        <div class="mt-1">
+          <button class="btn btn-primary btn-sm btn-full">⚔️ RETAR</button>
+        </div>
       </div>`).join('')}</div>`;
-  } catch (e) { console.error(e); }
+  } catch(e){ console.error(e); }
 };
 
 window.sendChallenge = async function(uid, apodo, score) {
+  haptic(40);
   try {
+    const q1 = query(collection(db,'challenges'), where('fromUid','==',currentUser.uid), where('toUid','==',uid));
+    const q2 = query(collection(db,'challenges'), where('fromUid','==',uid), where('toUid','==',currentUser.uid));
+    const [s1, s2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    if([...s1.docs, ...s2.docs].some(d => ['pending','postponed'].includes(d.data().status))) {
+      showToast('warning','Espera','Ya hay un desafío activo.'); return;
+    }
     await addDoc(collection(db, 'challenges'), {
       fromUid: currentUser.uid, fromApodo: currentUserData.apodo, fromScore: currentUserData.score || 1000,
       toUid: uid, toApodo: apodo, toScore: score, status: 'pending', timestamp: serverTimestamp()
     });
-    showToast('success', '¡Enviado!', `Desafío a ${apodo} en camino.`);
-  } catch (e) { showToast('error', 'Error', e.message); }
+    showToast('success','¡Lanzado!','Espera su respuesta.');
+  } catch(e){ showToast('error','Error','No se pudo enviar.'); }
 };
 
+// --- Missing functions for dashboard.html ---
+window.markAllRead = () => showToast('info','Notificaciones','Todo marcado como leído.');
+window.closeFightModal = () => document.getElementById('fightModal').classList.remove('open');
+window.closeOpponentModal = () => document.getElementById('opponentModal').classList.remove('open');
+window.closeChallengeModal = () => document.getElementById('challengeModal').classList.remove('open');
+window.acceptFromList = async (id) => { 
+  const s = await getDoc(doc(db,'challenges',id)); 
+  if(s.exists()){ activeChallengeId=id; activeChallengeData=s.data(); acceptChallenge(); } 
+};
+window.rejectFromList = (id) => { activeChallengeId=id; rejectChallenge(); };
+window.handleLogout = async () => { await signOut(auth); window.location.href='index.html'; };
+
 // --- Helpers ---
-function getLevel(s) {
-  if (s >= 2000) return { label: '🔥 LEYENDA', cls: 'level-legend' };
-  if (s >= 1500) return { label: '👑 CAMPEÓN', cls: 'level-champion' };
-  if (s >= 1250) return { label: '⚡ BRAWLER', cls: 'level-brawler' };
-  if (s >= 1100) return { label: '🥋 FIGHTER', cls: 'level-fighter' };
-  return { label: '🆕 ROOKIE', cls: 'level-rookie' };
+function getLevel(s){
+  if(s>=2000) return {label:'🔥 LEYENDA',cls:'level-legend'};
+  if(s>=1500) return {label:'👑 CAMPEÓN',cls:'level-champion'};
+  if(s>=1250) return {label:'⚡ BRAWLER',cls:'level-brawler'};
+  if(s>=1100) return {label:'🥋 FIGHTER',cls:'level-fighter'};
+  return {label:'🆕 ROOKIE',cls:'level-rookie'};
 }
-function updateNotifBadges(c) {
-  const b = document.getElementById('sidebarNotifBadge'); const n = document.getElementById('navNotifBadge');
-  if (c > 0) { if (b) { b.textContent = c; b.classList.remove('hidden'); } if (n) { n.classList.remove('hidden'); document.getElementById('notifCount').textContent = c; } }
-  else { if (b) b.classList.add('hidden'); if (n) n.classList.add('hidden'); }
+function updateNotifBadges(c){
+  const sb = document.getElementById('sidebarNotifBadge'); const nb = document.getElementById('navNotifBadge');
+  if(c > 0){ if(sb){sb.textContent=c; sb.classList.remove('hidden');} if(nb){nb.classList.remove('hidden'); document.getElementById('notifCount').textContent=c;}}
+  else{ if(sb)sb.classList.add('hidden'); if(nb)nb.classList.add('hidden');}
 }
-function showChallengeModal(c) {
-  activeChallengeId = c.id; activeChallengeData = c;
-  document.getElementById('challengerName').textContent = `"${c.fromApodo}"`;
-  document.getElementById('challengerScore').textContent = `ELO: ${c.fromScore}`;
+function showChallengeModal(c){
+  haptic([50,50,50]); activeChallengeId=c.id; activeChallengeData=c;
+  document.getElementById('challengerName').textContent=`"${c.fromApodo}"`;
+  document.getElementById('challengerScore').textContent=`Score: ${c.fromScore}`;
   document.getElementById('challengeModal').classList.add('open');
 }
-window.closeChallengeModal = () => document.getElementById('challengeModal').classList.remove('open');
-window.handleLogout = async () => { await signOut(auth); window.location.href = 'index.html'; };
-function escHtml(s) { return s ? String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m])) : ''; }
-window.showToast = (t, ti, msg) => {
-  const ico = { success:'✅', error:'❌', warning:'⚠️', info:'ℹ️' };
-  const toast = document.createElement('div'); toast.className = `toast ${t}`;
-  toast.innerHTML = `<span class="toast-icon">${ico[t]||'ℹ️'}</span><div class="toast-content"><div class="toast-title">${ti}</div><div class="toast-message">${msg}</div></div>`;
-  const cnt = document.getElementById('toastContainer');
-  if (cnt) { cnt.appendChild(toast); setTimeout(() => { toast.classList.add('fade-out'); setTimeout(() => toast.remove(), 300); }, 4000); }
+function showToast(t,ti,m){
+  const icos={success:'✅',error:'❌',warning:'⚠️',info:'ℹ️'};
+  const toast=document.createElement('div'); toast.className=`toast ${t}`;
+  toast.innerHTML=`<span class="toast-icon">${icos[t]||'ℹ️'}</span><div class="toast-content"><div class="toast-title">${ti}</div><div class="toast-message">${m}</div></div>`;
+  const cnt=document.getElementById('toastContainer'); if(cnt){cnt.appendChild(toast); setTimeout(()=>{toast.classList.add('fade-out'); setTimeout(()=>toast.remove(),300);},3000);}
+}
+window.requestLocation = function(){
+  if(!navigator.geolocation) return;
+  const b=document.getElementById('locationBanner'); if(b){const btn=b.querySelector('button'); btn.disabled=true; btn.textContent='GPS...';}
+  navigator.geolocation.getCurrentPosition(pos=>{
+    userCoords={lat:pos.coords.latitude, lng:pos.coords.longitude}; updateUserLocation(userCoords);
+    if(b) b.style.display='none'; showToast('success','LOCALIZADO','Rivaliza ya.');
+  }, err=>{ showToast('error','GPS','Error de ubicación.'); if(b){const btn=b.querySelector('button'); btn.disabled=false; btn.textContent='Activar GPS';}}, {timeout:10000});
 };
-window.requestLocation = function() {
-  if (!navigator.geolocation) return;
-  const b = document.getElementById('locationBanner'); if (b) { b.querySelector('button').disabled = true; b.querySelector('button').textContent = '⏳ ...'; }
-  navigator.geolocation.getCurrentPosition(pos => {
-    userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude }; updateUserLocation(userCoords);
-    if (b) b.style.display = 'none'; showToast('success', 'GPS OK', 'Ya puedes buscar.');
-  }, err => { showToast('error', 'Error GPS', ''); if (b) b.querySelector('button').disabled = false; }, { timeout: 10000, enableHighAccuracy: true });
-};
-function requestLocationSilent() { if (!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(pos => { userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude }; updateUserLocation(userCoords); }, ()=>{}, {timeout:10000}); }
-async function updateUserLocation(c) { try { await updateDoc(doc(db, 'users', currentUser.uid), { location: new GeoPoint(c.lat, c.lng), lastLocationUpdate: serverTimestamp() }); } catch(e){} }
-function haversineKm(l1, g1, l2, g2) { const R = 6371; const dL = (l2-l1)*Math.PI/180; const dG = (g2-g1)*Math.PI/180; const a = Math.sin(dL/2)**2 + Math.cos(l1*Math.PI/180)*Math.cos(l2*Math.PI/180)*Math.sin(dG/2)**2; return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); }
+function requestLocationSilent(){ if(navigator.geolocation) navigator.geolocation.getCurrentPosition(pos=>{userCoords={lat:pos.coords.latitude, lng:pos.coords.longitude};updateUserLocation(userCoords);},()=>{},{timeout:10000}); }
+async function updateUserLocation(c){ try{await updateDoc(doc(db,'users',currentUser.uid),{location:new GeoPoint(c.lat,c.lng),lastLocationUpdate:serverTimestamp()});}catch(e){} }
+function haversineKm(l1,g1,l2,g2){ const R=6371; const dL=(l2-l1)*Math.PI/180; const dG=(g2-g1)*Math.PI/180; const a=Math.sin(dL/2)**2+Math.cos(l1*Math.PI/180)*Math.cos(l2*Math.PI/180)*Math.sin(dG/2)**2; return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
+function renderSidebar(d){
+  const av=document.getElementById('sidebarAvatar'); if(av) av.src=d.photoURL||'';
+  const navAv=document.getElementById('navAvatar'); if(navAv){navAv.src=d.photoURL||''; navAv.style.display='block';}
+  const sn=document.getElementById('sidebarName'); if(sn) sn.textContent=d.nombre;
+  const sa=document.getElementById('sidebarApodo'); if(sa) sa.textContent=`"${d.apodo}"`;
+  const ss=document.getElementById('sidebarScore'); if(ss) ss.textContent=d.score||1000;
+  const w=d.wins||0; const l=d.losses||0; const dr=d.draws||0; const tot=w+l+dr; const wr=tot>0?Math.round(w/tot*100):0;
+  if(document.getElementById('sidebarWins')) document.getElementById('sidebarWins').textContent=w;
+  if(document.getElementById('sidebarLosses')) document.getElementById('sidebarLosses').textContent=l;
+  if(document.getElementById('sidebarWinRate')) document.getElementById('sidebarWinRate').textContent=`${wr}%`;
+}
+function escHtml(s){return s?String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m])): '';}
+
+// Gestures
+let touchStartY = 0;
+document.getElementById('challengeModal').addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; }, { passive: true });
+document.getElementById('challengeModal').addEventListener('touchmove', (e) => {
+  const diff = e.touches[0].clientY - touchStartY;
+  if (diff > 100) { closeChallengeModal(); haptic(10); }
+}, { passive: true });

@@ -9,12 +9,16 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="description" content="Perfil de peleador en StreetRank"/>
   <title>StreetRank – Perfil</title>
   <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="mobile.css" media="screen and (max-width: 768px)"/>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#c0392b" />
+  <link rel="apple-touch-icon" href="icon.png" />
 </head>
 <body>
 
@@ -251,31 +255,46 @@
       document.getElementById('profileDesc').textContent = `"${d.descripcion}"`;
     }
 
-    // Historial de peleas
+    // Historial de peleas (Rich UI)
     const fights = d.fights || [];
-    document.getElementById('fightCount').textContent = `${fights.length} pelea(s)`;
+    const countEl = document.getElementById('fightCount');
+    if (countEl) countEl.textContent = `${fights.length} pelea(s)`;
+    
     if (fights.length > 0) {
-      const sorted = [...fights].sort((a, b) => {
-        const da = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha || 0);
-        const db2 = b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha || 0);
-        return db2 - da;
-      });
+      const sorted = [...fights].sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
       document.getElementById('fightHistory').innerHTML = `
-        <div class="fight-list">
+        <div class="fight-history-grid" style="grid-template-columns: 1fr;">
           ${sorted.map(f => {
-            const diff = (f.miScoreDespues || 0) - (f.miScoreAntes || 0);
-            const diffStr = diff >= 0 ? `+${diff}` : `${diff}`;
-            const diffCls = diff > 0 ? 'positive' : diff < 0 ? 'negative' : '';
-            const fecha = f.fecha?.toDate ? f.fecha.toDate().toLocaleDateString('es') : (f.fecha ? new Date(f.fecha).toLocaleDateString('es') : '—');
+            const resClass = f.resultado === 'win' ? 'win' : f.resultado === 'loss' ? 'loss' : 'draw';
+            const resText = f.resultado === 'win' ? 'VICTORIA' : f.resultado === 'loss' ? 'DERROTA' : 'EMPATE';
+            // Compatibilidad con datos viejos y nuevos
+            const puntos = f.puntos !== undefined ? f.puntos : ((f.miScoreDespues || 0) - (f.miScoreAntes || 0));
+            const pointsText = puntos >= 0 ? `+${puntos}` : puntos;
+            const oppApodo = f.opponent || f.opponentApodo || 'Desconocido';
+            const oppPhoto = f.opponentPhoto || 'https://api.dicebear.com/7.x/identicon/svg?seed=' + oppApodo;
+            const dateStr = f.fecha ? new Date(f.fecha).toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) : '—';
+            
             return `
-              <div class="fight-item">
-                <div class="fight-result ${f.resultado}">${f.resultado === 'win' ? 'WIN' : f.resultado === 'loss' ? 'LOSS' : 'DRAW'}</div>
-                <div class="fight-opponent">
-                  <div class="apodo">vs. ${escHtml(f.opponentApodo || '???')}</div>
-                  <div class="date">${fecha}</div>
+              <div class="fight-card-rich ${resClass} animate-in">
+                <div class="fight-card-header">
+                  <div class="fight-date">${dateStr}</div>
+                  <div class="fight-result-badge">${resText}</div>
                 </div>
-                <div class="fight-score-change ${diffCls}">${diffStr} pts</div>
-              </div>`;
+                <div class="fight-card-body">
+                  <div class="opponent-info">
+                    <img src="${oppPhoto}" class="opp-avatar"/>
+                    <div class="opp-details">
+                      <div class="opp-apodo">vs "${escHtml(oppApodo)}"</div>
+                      <div class="opp-score">Score Rival: ${f.opponentScore || '—'}</div>
+                    </div>
+                  </div>
+                  <div class="score-delta">
+                    <div class="delta-value" style="font-size:1.3rem;">${pointsText}</div>
+                    <div class="delta-label">PTS</div>
+                  </div>
+                </div>
+              </div>
+            `;
           }).join('')}
         </div>`;
     }
@@ -343,21 +362,43 @@
   window.challengeUser = async function(toUid, toApodo) {
     if (!currentUser) return;
     if (toUid === currentUser.uid) { showToast('warning','Ojo','No puedes desafiarte a ti mismo.'); return; }
+    
     try {
       const { db: firestoreDb } = await import('./firebase.js');
-      const { addDoc, collection: col, serverTimestamp: sts } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js');
+      const { getDocs, where, query: fQuery, collection: fCol } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js');
+      
+      // 1. Evitar desafíos duplicados
+      const q1 = fQuery(fCol(db, 'challenges'), where('fromUid', '==', currentUser.uid), where('toUid', '==', toUid));
+      const q2 = fQuery(fCol(db, 'challenges'), where('fromUid', '==', toUid), where('toUid', '==', currentUser.uid));
+      
+      const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+      const activeChallenge = [...snap1.docs, ...snap2.docs].find(d => ['pending', 'postponed'].includes(d.data().status));
+
+      if (activeChallenge) {
+        showToast('warning', 'Ya hay un reto', `Ya tienes un desafío activo con ${toApodo}.`);
+        return;
+      }
+
+      // 2. Obtener mis datos
       const mySnap = await getDoc(doc(db, 'users', currentUser.uid));
       const myData = mySnap.data();
       if (!myData?.profileComplete) { showToast('warning','Perfil incompleto','Completa tu perfil antes de desafiar.'); return; }
+      
+      // 3. Lanzar desafío
       await addDoc(collection(db, 'challenges'), {
-        fromUid: currentUser.uid, fromApodo: myData.apodo,
+        fromUid: currentUser.uid, 
+        fromApodo: myData.apodo,
         fromScore: myData.score || 1000,
-        toUid, toApodo,
-        status: 'pending', timestamp: serverTimestamp()
+        toUid, 
+        toApodo,
+        toScore: viewedData.score || 1000,
+        status: 'pending', 
+        timestamp: serverTimestamp()
       });
-      showToast('success','¡Desafío enviado!',`Has desafiado a ${toApodo}. Espera su respuesta.`);
+      showToast('success','¡Desafío enviado!',`Has desafiado a ${toApodo}.`);
     } catch(err) {
-      showToast('error','Error','No se pudo enviar el desafío: '+err.message);
+      console.error(err);
+      showToast('error','Error','No se pudo enviar: '+err.message);
     }
   };
 
